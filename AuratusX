@@ -1,0 +1,212 @@
+-- ZenithUI.lua
+-- A minimal UI library for Roblox exploits (Zenith/Synapse-style)
+local ZenithUI = {}
+ZenithUI.__index = ZenithUI
+
+-- internal helper to get a safe parent (CoreGui or gethui)
+local function getContainer()
+    local CoreGui = game:GetService("CoreGui")
+    if syn and syn.protect_gui then
+        syn.protect_gui(CoreGui)
+    elseif gethui then
+        CoreGui = gethui()
+    end
+    return CoreGui
+end
+
+-- Creates a new draggable window
+function ZenithUI:NewWindow(title)
+    local container = getContainer()
+    -- Main frame
+    local win = Instance.new("ScreenGui")
+    win.Name = "ZenithUI"
+    win.ResetOnSpawn = false
+    win.Parent = container
+
+    local frame = Instance.new("Frame")
+    frame.Name = "Window"
+    frame.Size = UDim2.new(0, 300, 0, 40)
+    frame.Position = UDim2.new(0.5, -150, 0.5, -20)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    frame.BorderSizePixel = 0
+    frame.Parent = win
+
+    -- Title bar
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "Title"
+    titleLabel.Size = UDim2.new(1, 0, 1, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Font = Enum.Font.SourceSansBold
+    titleLabel.TextSize = 18
+    titleLabel.TextColor3 = Color3.new(1,1,1)
+    titleLabel.Text = title or "Window"
+    titleLabel.Parent = frame
+
+    -- Content area (below title)
+    local content = Instance.new("Frame")
+    content.Name = "Content"
+    content.Size = UDim2.new(1, 0, 1, -40)
+    content.Position = UDim2.new(0, 0, 0, 40)
+    content.BackgroundTransparency = 1
+    content.Parent = frame
+
+    -- make draggable
+    local UserInputService = game:GetService("UserInputService")
+    local dragging, dragInput, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+
+    local self = setmetatable({
+        Gui = win,
+        Container = content,
+        NextY = 0
+    }, ZenithUI)
+
+    return self
+end
+
+-- Internal: create a new control wrapper
+function ZenithUI:_newControl(height)
+    local y = self.NextY
+    local ctrl = Instance.new("Frame")
+    ctrl.Size = UDim2.new(1, -20, 0, height)
+    ctrl.Position = UDim2.new(0, 10, 0, y)
+    ctrl.BackgroundTransparency = 1
+    ctrl.Parent = self.Container
+    self.NextY = y + height + 8
+    return ctrl
+end
+
+-- Button
+function ZenithUI:NewButton(text, callback)
+    local ctrl = self:_newControl(30)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1,0,1,0)
+    btn.BackgroundColor3 = Color3.fromRGB(50,50,50)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 16
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Text = text or "Button"
+    btn.Parent = ctrl
+    btn.MouseButton1Click:Connect(function()
+        callback and pcall(callback)
+    end)
+    return btn
+end
+
+-- Toggle
+function ZenithUI:NewToggle(text, default, callback)
+    local ctrl = self:_newControl(30)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.7,0,1,0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 16
+    label.TextColor3 = Color3.new(1,1,1)
+    label.Text = text or "Toggle"
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = ctrl
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.3,-4,1,0)
+    btn.Position = UDim2.new(0.7,4,0,0)
+    btn.BackgroundColor3 = default and Color3.fromRGB(0,170,0) or Color3.fromRGB(170,0,0)
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.SourceSansBold
+    btn.TextSize = 14
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Text = default and "ON" or "OFF"
+    btn.Parent = ctrl
+
+    local state = default or false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.BackgroundColor3 = state and Color3.fromRGB(0,170,0) or Color3.fromRGB(170,0,0)
+        btn.Text = state and "ON" or "OFF"
+        callback and pcall(callback, state)
+    end)
+
+    return btn
+end
+
+-- Slider
+function ZenithUI:NewSlider(text, min, max, default, callback)
+    local ctrl = self:_newControl(40)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1,0,0,16)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.SourceSans
+    label.TextSize = 14
+    label.TextColor3 = Color3.new(1,1,1)
+    label.Text = string.format("%s: %d", text or "Slider", default or min)
+    label.Parent = ctrl
+
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(1,0,0,8)
+    track.Position = UDim2.new(0,0,0,24)
+    track.BackgroundColor3 = Color3.fromRGB(80,80,80)
+    track.BorderSizePixel = 0
+    track.Parent = ctrl
+
+    local handle = Instance.new("Frame")
+    handle.Size = UDim2.new(0,16,1,0)
+    handle.BackgroundColor3 = Color3.fromRGB(200,200,200)
+    handle.BorderSizePixel = 0
+    handle.Parent = track
+
+    local dragging = false
+    local function updateInput(input)
+        local rel = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+        handle.Position = UDim2.new(rel, -8, 0, 0)
+        local value = math.floor(min + (max - min) * rel + 0.5)
+        label.Text = string.format("%s: %d", text, value)
+        callback and pcall(callback, value)
+    end
+
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+    handle.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    track.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+            updateInput(input)
+        end
+    end)
+
+    return handle
+end
+
+return ZenithUI
